@@ -20,13 +20,10 @@ CAVE = 0x3C46C00
 CAVE_END = 0x3C46F00
 BRIDGE = 0x4E9F000                  # page of the bridge table (memory offset)
 
-# (site IPS offset, slot offset in bridge page, original bl target IPS offset)
-NPAD_HOOKS = [
-    (0x34695F8, 0x800, 0x3C428F0),
-    (0x3469624, 0x808, 0x3C42910),
-    (0x3469650, 0x810, 0x3C42920),
-    (0x346976C, 0x818, 0x3C42900),
-    (0x3469798, 0x820, 0x3C42930),
+# Hooked `bl`s: (site IPS offset, slot offset in bridge page, original bl target IPS offset).
+# The controller reads are not here: they go through PLT stubs, so the module swaps their GOT
+# slots at startup and main's code stays untouched (bridge slots 0x800-0x820 are unused now).
+CALL_HOOKS = [
     # NVN loader (resolves the graphics API); the module wraps present from here.
     (0x346C0F0, 0x828, 0x129E390),
     (0x346C1D4, 0x828, 0x129E390),
@@ -61,7 +58,7 @@ LIFE_SITE = 0x49DDF8      # IPS offset: `cas w11, w12, [x13]` that writes Link's
 LIFE_BACK = 0x49DCFC      # memory offset of the instruction after it
 LIFE_SLOT = 0x870         # data slot: address of Link's life word while God Mode is on, else 0
 # memory offset (from main) of the actor trampoline's fallback (pacibsp; b body)
-ACTOR_FALLBACK = CAVE + 7 * 20 + 16
+ACTOR_FALLBACK = CAVE + len(CALL_HOOKS) * 20 + 16
 
 
 def actor_trampoline(pc):
@@ -128,7 +125,7 @@ def camera_trampoline(pc):
 def records():
     recs = []
     pc = CAVE
-    for site, slot, orig in NPAD_HOOKS:
+    for site, slot, orig in CALL_HOOKS:
         site_m, orig_m = site - NSO_HDR, orig - NSO_HDR
         recs.append((site, b(site_m, pc, link=True)))
         recs.append((pc + NSO_HDR, trampoline(pc, slot, orig_m)))

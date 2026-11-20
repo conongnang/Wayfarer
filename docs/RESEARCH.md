@@ -47,7 +47,8 @@ Use file offsets in the mod. Derived by matching Hookshot's function table again
   below and in the IPS files is an IPS offset; subtract 0x100 to index the flat `main` image. (The Hookshot
   function addresses in the table above are memory offsets already.) Verified: `cas w11,w12,[x13]` is at
   memory 0x49DCF8 (IPS 0x49DDF8).
-- The IPS patches 17 sites in `main`. Each jumps to a trampoline in a code cave at memory `0x3C46C00+` (IPS `0x3C46D00+`;
+- The IPS patches a handful of sites in `main` (the NVN loader, actor update, life write and camera since
+  the controller moved to the GOT after 1.2.1; the list in mkips.py is authoritative). Each jumps to a trampoline in a code cave at memory `0x3C46C00+` (IPS `0x3C46D00+`;
   it was `0x3C46280+` until Lichii's built-in FPS patches turned out to share those bytes) that loads a
   function pointer from a bridge table at `0x4E9F800+` (8-byte slots) and branches to it when non-null,
   otherwise runs the original instruction.
@@ -55,10 +56,14 @@ Use file offsets in the mod. Derived by matching Hookshot's function table again
   `QueryMemory` downward for the RX region of size 0x3C47000 whose word at +4 is 0x3C4705C, checks the bridge
   table is empty, then fills slots. (Wayfarer also checks, before the bridge table, that every byte its IPS
   writes is in place in `main`; build.py generates that list from mkips.py into `build/ipscheck.h`.) The module's `ret` at text 0 and MOD0 offset at text 4 are the NSO entry.
-- Slot map (IPS site -> slot): npad readers 34695F8/3469624/3469650/346976C/3469798 -> 0x800/0x808/0x810/
-  0x818/0x820 (each `bl`s one of five `nn::hid` pad-state functions at memory 0x3C427F0/810/820/800/830;
-  signature `long fn(State *out, int count, const u32 *npad_id)`, buttons u64 at `out+8`, R3 = StickR = bit 5);
-  render hook 346C0F0/346C1D4 -> 0x828; scene reset 32C1EB0/32D8600/32BBDE0 -> 0x830/0x838/0x840;
+- Controller (hooked through the GOT after 1.2.1; no IPS): the npad readers at IPS 34695F8/3469624/3469650/346976C/3469798 each
+  `bl` one of five `nn::hid` pad-state PLT stubs at memory 0x3C427F0/810/820/800/830 (one caller each;
+  signature `long fn(State *out, int count, const u32 *npad_id)`, buttons u64 at `out+8`, R3 = StickR = bit 5).
+  The stubs load from GOT slots at memory 0x4CBF5C0/5D0/5D8/5C8/5E0 in main's writable data. Lichii binds
+  them lazily: until the first call a slot holds main+0x3C41C50 (the PLT resolver), which rewrites it on
+  that call, so the module decodes each stub to find its slot and swaps in its thunk from present once the
+  slot holds the resolved function. Bridge slots 0x800-0x820 are unused.
+- Slot map (IPS site -> slot): render hook 346C0F0/346C1D4 -> 0x828; scene reset 32C1EB0/32D8600/32BBDE0 -> 0x830/0x838/0x840;
   per-frame actor update 49D9C0 -> 0x848 (finds Link by the name "Player"); damage 2F8E860 -> 0x850;
   movement speed 934A90/280FC44 -> 0x858/0x860, 27CD040/27D08E4 -> 0x868; life CAS 49DDF8 -> 0x870 (a data
   slot holding the life pointer, compared in the trampoline).

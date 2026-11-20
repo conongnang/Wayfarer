@@ -378,8 +378,11 @@ static void menu_input_inner(u64 e)
 static u64 g_base;          /* runtime address of main */
 static u64 g_prev[5];       /* previous buttons per hooked input function */
 
-/* Offsets (from main) of the five input functions the hooks call through to. */
-const u64 wf_npad_fn[5] = {0x3c427f0, 0x3c42810, 0x3c42820, 0x3c42800, 0x3c42830};
+/* Offsets (from main) of the PLT stubs through which the game reads the controller: one
+ * `nn::hid` pad-state function each, and each stub has exactly one caller. The module finds each
+ * stub's GOT slot, keeps the resolved function in wf_npad_orig and points the slot at a thunk. */
+static const u64 wf_npad_stub[5] = {0x3c427f0, 0x3c42810, 0x3c42820, 0x3c42800, 0x3c42830};
+u64 wf_npad_orig[5];
 
 /*
  * Replaces a call to one of the game's pad-state readers
@@ -388,10 +391,15 @@ const u64 wf_npad_fn[5] = {0x3c427f0, 0x3c42810, 0x3c42820, 0x3c42800, 0x3c42830
  * the game while the menu is open. State layout: u64 sample, u64 buttons,
  * s32 stickL[2], s32 stickR[2], u32 attributes, stride 0x28.
  */
-long wf_npad(void *out, int count, const u32 *id, u64 fn_off, u64 idx)
+long wf_npad(void *out, int count, const u32 *id, u64 fn, u64 idx)
 {
-    long (*orig)(void *, int, const u32 *) = (long (*)(void *, int, const u32 *))(g_base + fn_off);
+    long (*orig)(void *, int, const u32 *) = (long (*)(void *, int, const u32 *))fn;
     long n = orig(out, count, id);
+    static int seen;
+    if (!seen) {
+        seen = 1;
+        dbg("[wayfarer] controller hook live\n");
+    }
     if (n >= 1 && id && (*id == 0 || *id == 0x20)) {
         u8 *o = (u8 *)out;
         int was_open = g_open;
@@ -436,8 +444,8 @@ long wf_npad(void *out, int count, const u32 *id, u64 fn_off, u64 idx)
 
 #define THUNK(i, off)                              \
     ".global wf_thunk" #i "\nwf_thunk" #i ":\n"    \
-    "  adrp x5, wf_npad_fn\n"                      \
-    "  add  x5, x5, :lo12:wf_npad_fn\n"            \
+    "  adrp x5, wf_npad_orig\n"                    \
+    "  add  x5, x5, :lo12:wf_npad_orig\n"          \
     "  ldr  x3, [x5, #" #off "]\n"                 \
     "  mov  x4, #" #i "\n"                         \
     "  b    wf_npad\n"
@@ -445,6 +453,67 @@ long wf_npad(void *out, int count, const u32 *id, u64 fn_off, u64 idx)
 __asm__(".section .text.thunks,\"ax\"\n" THUNK(0, 0) THUNK(1, 8) THUNK(2, 16) THUNK(3, 24) THUNK(4, 32) ".text\n");
 
 extern char wf_thunk0[], wf_thunk1[], wf_thunk2[], wf_thunk3[], wf_thunk4[];
+
+/*
+ * The GOT slot a PLT stub in main jumps through, or 0 when it can't be hooked safely. The stub
+ * must be exactly `adrp x16, page; ldr x17, [x16, #off]; add x16, x16, #off; br x17` and the
+ * slot must be writable.
+ */
+static volatile u64 *npad_got_slot(u64 base, u64 stub_off)
+{
+    const volatile u32 *s = (const volatile u32 *)(base + stub_off);
+    u32 adrp = s[0], ldr = s[1], add = s[2], br = s[3];
+    if ((adrp & 0x9f00001fu) != 0x90000010u || (ldr & 0xffc003ffu) != 0xf9400211u ||
+        (add & 0xffc003ffu) != 0x91000210u || br != 0xd61f0220u) {
+        dbg("[wayfarer] not a PLT stub\n");
+        return 0;
+    }
+    long pages = (long)((((adrp >> 5) & 0x7ffff) << 2) | ((adrp >> 29) & 3));
+    if (pages & (1l << 20)) pages -= 1l << 21;
+    u64 page = ((base + stub_off) & ~0xfffull) + (u64)(pages << 12);
+    u64 off = ((ldr >> 10) & 0xfff) * 8;
+    if (((add >> 10) & 0xfff) != off) {
+        dbg("[wayfarer] PLT stub offsets disagree\n");
+        return 0;
+    }
+    volatile u64 *slot = (volatile u64 *)(page + off);
+    MemInfo mi;
+    if (query_memory((u64)slot, &mi) != 0 || (mi.perm & 3) != 3) {
+        dbgx("GOT slot not writable, perm", mi.perm);
+        return 0;
+    }
+    return slot;
+}
+
+/*
+ * The loader binds these imports lazily: until the game's first call, a slot points at the PLT
+ * resolver inside main, and the resolver rewrites the slot on that call, which would throw a hook
+ * installed earlier away. So each slot is swapped only once it holds the resolved function
+ * (executable, outside main's code). Called at startup and then from present every frame until
+ * all five are in; after that it costs one load.
+ */
+static volatile u64 *g_npad_got[5];
+static int g_npad_pending;   /* bit i: slot i not hooked yet */
+
+static void npad_hook_resolved(void)
+{
+    if (!g_npad_pending) return;
+    /* a local array: the addresses come from adrp, a static one would need relocations */
+    u64 thunk[5] = {(u64)wf_thunk0, (u64)wf_thunk1, (u64)wf_thunk2, (u64)wf_thunk3, (u64)wf_thunk4};
+    for (int i = 0; i < 5; i++) {
+        if (!(g_npad_pending & (1 << i))) continue;
+        u64 fn = *g_npad_got[i];
+        if (!fn || (fn >= g_base && fn < g_base + MAIN_RX_SIZE)) continue;   /* not resolved yet */
+        MemInfo mi;
+        if (query_memory(fn, &mi) != 0 || (mi.perm & 5) != 5) continue;
+        wf_npad_orig[i] = fn;
+        __asm__ volatile("dmb ish" ::: "memory");   /* the original is visible before the thunk can run */
+        *g_npad_got[i] = thunk[i];
+        g_npad_pending &= ~(1 << i);
+        dbgx("controller slot hooked", (u64)i);
+        if (!g_npad_pending) dbg("[wayfarer] controller hooks installed\n");
+    }
+}
 
 #include "cheats.h"
 
@@ -701,6 +770,7 @@ static void draw_menu(void *queue, void *tex, void *win)
 
 static void wf_present(void *queue, void *win, int idx)
 {
+    npad_hook_resolved();
     if (g_open && win == g_win && idx >= 0 && idx < g_ntex) draw_menu(queue, g_tex[idx], win);
     n_present(queue, win, idx);
 }
@@ -822,11 +892,18 @@ void wf_init(void)
         }
     }
 
-    t[0] = (u64)wf_thunk0;   /* 0x800 */
-    t[1] = (u64)wf_thunk1;   /* 0x808 */
-    t[2] = (u64)wf_thunk2;   /* 0x810 */
-    t[3] = (u64)wf_thunk3;   /* 0x818 */
-    t[4] = (u64)wf_thunk4;   /* 0x820 */
+    /* The controller: find all five GOT slots before hooking anything. */
+    for (int i = 0; i < 5; i++) {
+        g_npad_got[i] = npad_got_slot(base, wf_npad_stub[i]);
+        if (!g_npad_got[i]) {
+            dbgx("controller stub not hookable at main+", wf_npad_stub[i]);
+            dbg("[wayfarer] cannot read the controller; idle\n");
+            return;
+        }
+    }
+    g_npad_pending = 0x1f;
+    npad_hook_resolved();   /* the rest follow from present once the game has read the pad */
+
     t[5] = (u64)wf_nvn_load; /* 0x828 */
     wf_actor_orig = base + WF_ACTOR_FALLBACK;   /* the actor trampoline's "pacibsp; b body" tail */
     t[9] = (u64)wf_actor_thunk; /* 0x848 */

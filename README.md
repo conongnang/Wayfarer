@@ -134,7 +134,7 @@ python tools/mockserver.py
 
 ### How it works
 
-The module is a single C file compiled freestanding for AArch64 and wrapped as an NSO. A small IPS patch installs hooks in the game's `main` for the controller and for the graphics present call; the menu is painted in software into a buffer and drawn over the frame. Because the module has no relocations, all text lives in NUL-separated string blobs, and the art is embedded as raw bytes.
+The module is a single C file compiled freestanding for AArch64 and wrapped as an NSO. The module reads the controller by redirecting the game's imported `nn::hid` calls through their GOT entries, and a small IPS patch hooks a few spots in the game's `main` (the graphics setup, Link's update, his life and the camera); the menu is painted in software into a buffer and drawn over the frame. Because the module has no relocations, all text lives in NUL-separated string blobs, and the art is embedded as raw bytes.
 
 | Path | What is in it |
 | --- | --- |
