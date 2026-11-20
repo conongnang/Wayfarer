@@ -742,6 +742,29 @@ u64 wf_nvn_load(void *dev, GetProc gp)
 
 /* ---- entry ------------------------------------------------------------ */
 
+/* ---- startup self-check of the IPS ------------------------------------- */
+
+#include "ipscheck.h"
+
+/* Every byte this build's IPS writes into main must be in place. A mismatch means the .ips next to
+ * this module is from another build, or another mod (or one of the emulator's built-in patches)
+ * rewrote the same code; hooking anyway would jump into code we don't own, so stay idle instead. */
+static int ips_matches(u64 base)
+{
+    const u8 *want = wf_ips_bytes;
+    for (int i = 0; i < WF_IPS_RECS; i++) {
+        const volatile u8 *have = (const volatile u8 *)(base + wf_ips_off[i]);
+        for (int j = 0; j < wf_ips_len[i]; j++) {
+            if (have[j] != want[j]) {
+                dbgx("ips mismatch at main+", (u64)wf_ips_off[i] + (u64)j);
+                return 0;
+            }
+        }
+        want += wf_ips_len[i];
+    }
+    return 1;
+}
+
 /* Bisecting builds: 0 = empty init, 1 = log one line only, 2 = full (default). */
 #ifndef WF_VARIANT
 #define WF_VARIANT 2
@@ -778,6 +801,10 @@ void wf_init(void)
     }
     if (!base) {
         dbg("[wayfarer] main not found; idle\n");
+        return;
+    }
+    if (!ips_matches(base)) {
+        dbg("[wayfarer] the .ips is missing, from another Wayfarer build, or changed by another mod; idle\n");
         return;
     }
     g_base = base;

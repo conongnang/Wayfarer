@@ -53,7 +53,8 @@ Use file offsets in the mod. Derived by matching Hookshot's function table again
   otherwise runs the original instruction.
 - rc1 module init (DT_INIT at text 0xE0): checks the title id with `svc 0x29`, finds `main` by walking
   `QueryMemory` downward for the RX region of size 0x3C47000 whose word at +4 is 0x3C4705C, checks the bridge
-  table is empty, then fills slots. The module's `ret` at text 0 and MOD0 offset at text 4 are the NSO entry.
+  table is empty, then fills slots. (Wayfarer also checks, before the bridge table, that every byte its IPS
+  writes is in place in `main`; build.py generates that list from mkips.py into `build/ipscheck.h`.) The module's `ret` at text 0 and MOD0 offset at text 4 are the NSO entry.
 - Slot map (IPS site -> slot): npad readers 34695F8/3469624/3469650/346976C/3469798 -> 0x800/0x808/0x810/
   0x818/0x820 (each `bl`s one of five `nn::hid` pad-state functions at memory 0x3C427F0/810/820/800/830;
   signature `long fn(State *out, int count, const u32 *npad_id)`, buttons u64 at `out+8`, R3 = StickR = bit 5);

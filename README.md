@@ -110,6 +110,7 @@ Wayfarer 1.0 was the first public release; 1.1 adds saved favorites, a steadier 
 - God Mode, the infinite refills, Movement Speed, Flight, Free Camera and Teleport have had the most play-testing. **Chicken Gravity**, **Jump Height** and Teleport **favorites** are the newest and have had the least.
 - Teleport favorites and the sort order are saved to `wayfarer/favorites.bin` on the emulator's SD card, so they survive a restart. If the emulator doesn't give the game an SD card, they last only until you close the game.
 - Savestates: loading one gives Wayfarer no signal to reset, so a refill may need a moment to catch up.
+- At startup Wayfarer checks that its `.ips` patch is in place and that nothing else changed it. If the two files come from different versions, or another mod patches the same code, it stays switched off (R3 does nothing) instead of risking a crash, and Lichii's log says why: look for lines starting with `[wayfarer]`.
 
 Found a bug? Please open an [issue](../../issues) with what you were doing and the game's log if you have it.
 
