@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <kbd>v1.2</kbd> &nbsp; <kbd>GPL-3.0</kbd> &nbsp; <kbd>by melianluthien</kbd>
+  <kbd>v1.2.1</kbd> &nbsp; <kbd>GPL-3.0</kbd> &nbsp; <kbd>by melianluthien</kbd>
 </p>
 
 <p align="center">
@@ -73,7 +73,7 @@ Thirty-one places, from Kokiri Forest to Ganon's Castle, sorted either **alphabe
 
 You need the game (title ID `0400486024DEC000`, version **1.1.1**, build ID `E0F3CCFAF50065AE4EA01EB5AEB13B1A45DA3348`) running in **Lichii**. Wayfarer ships no game files.
 
-1. Download `Wayfarer-v1.2.zip` from the [Releases](../../releases) page and unzip it. You get a folder named `Wayfarer` with an `exefs` folder inside.
+1. Download `Wayfarer-v1.2.1.zip` from the [Releases](../../releases) page and unzip it. You get a folder named `Wayfarer` with an `exefs` folder inside.
 2. Close the game. In Lichii, right-click the game and choose **Open Mod Data Location**.
 3. Copy the whole `Wayfarer` folder in there. Inside, `exefs` must hold `subsdk8` and a file named after the build ID with the `.ips` extension.
 4. Start the game, load a save and click the right stick (**R3**) during gameplay.
@@ -104,7 +104,7 @@ While the menu is open the game doesn't see your inputs. **Free Camera** closes 
 
 ## Status
 
-Wayfarer 1.0 was the first public release; 1.1 adds saved favorites, a steadier Chicken Gravity, working song icons and a marker that shows whether a position is saved; 1.2 makes room for Lichii's built-in Ocarina patches (**FPS Unlock**, **Dynamic FPS**, **Texture Pool x2**), which 1.1 kept from loading, so the game runs at the right speed above 60 fps.
+Wayfarer 1.0 was the first public release; 1.1 adds saved favorites, a steadier Chicken Gravity, working song icons and a marker that shows whether a position is saved; 1.2 makes room for Lichii's built-in Ocarina patches (**FPS Unlock**, **Dynamic FPS**, **Texture Pool x2**), which 1.1 kept from loading, so the game runs at the right speed above 60 fps; 1.2.1 checks its patch at startup and stays off instead of crashing when it finds a mismatch.
 
 - Written and tested by hand on **Lichii for Windows** with game version 1.1.1. It has not been tried on real hardware or in other emulators.
 - God Mode, the infinite refills, Movement Speed, Flight, Free Camera and Teleport have had the most play-testing. **Chicken Gravity**, **Jump Height** and Teleport **favorites** are the newest and have had the least.
